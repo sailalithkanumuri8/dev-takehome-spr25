@@ -6,6 +6,7 @@ interface ButtonProps {
   variant?: ButtonVariant;
   type?: "button" | "submit" | "reset";
   onClick?: React.MouseEventHandler<HTMLButtonElement>;
+  disabled?: boolean;
   children: React.ReactNode;
 }
 
@@ -13,9 +14,11 @@ export default function Button({
   variant = "primary",
   type = "button",
   onClick,
+  disabled = false,
   children,
 }: ButtonProps) {
   const baseStyles = "py-2 px-4 rounded-md transition w-full ";
+  const disabledStyles = disabled ? "opacity-50 cursor-not-allowed" : "";
 
   const variantStyles: Record<ButtonVariant, string> = {
     primary:
@@ -27,8 +30,9 @@ export default function Button({
   return (
     <button
       type={type}
-      className={`${baseStyles} ${variantStyles[variant]}`}
+      className={`${baseStyles} ${variantStyles[variant]} ${disabledStyles}`}
       onClick={onClick}
+      disabled={disabled}
     >
       {children}
     </button>
