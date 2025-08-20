@@ -32,3 +32,5 @@
 # Notes
 
 <!-- Notes go here -->
+
+Thank you so much for this opporunity! Because school just started, classes giving homework, and finishing unpacking, I wasn't able to spend a lot of time (just able to to the minimum and main requirements). Please let me know if I can clarify anything and if you have any questions!
