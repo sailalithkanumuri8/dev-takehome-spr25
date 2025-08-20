@@ -1,141 +1,169 @@
 "use client";
 
-import Button from "@/components/atoms/Button";
-import Input from "@/components/atoms/Input";
 import { useState, useEffect } from "react";
-import { ItemRequest } from "@/lib/types/itemRequest";
+import ItemRequestsTable from "@/components/tables/ItemRequestsTable";
+import Pagination from "@/components/molecules/Pagination";
+import { ItemRequest, PaginatedItemRequests } from "@/lib/types/itemRequest";
+import { RequestStatus } from "@/lib/types/request";
 
 /**
- * Admin portal connected to real MongoDB backend
+ * Admin portal for managing item requests with full table interface
  */
 export default function ItemRequestsPage() {
-  const [item, setItem] = useState<string>("");
-  const [requestorName, setRequestorName] = useState<string>("");
-  const [approvedItems, setApprovedItems] = useState<ItemRequest[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>("");
+  const [requests, setRequests] = useState<ItemRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [activeTab, setActiveTab] = useState("all");
+  const [updating, setUpdating] = useState("");
 
-  // Fetch approved items on component mount
-  useEffect(() => {
-    fetchApprovedItems();
-  }, []);
-
-  const fetchApprovedItems = async (): Promise<void> => {
-    try {
-      const response = await fetch('/api/request?status=approved&page=1');
-      if (response.ok) {
-        const data = await response.json();
-        setApprovedItems(data.data || []);
-      }
-    } catch (err) {
-      console.error('Error fetching approved items:', err);
-    }
-  };
-
-  const handleAddItem = async (): Promise<void> => {
-    if (!item.trim() || !requestorName.trim()) {
-      setError("Both requestor name and item are required");
-      return;
-    }
-
+  const fetchRequests = async (page = currentPage, status?: string) => {
     setLoading(true);
     setError("");
-
+    
     try {
-      // Create the request
-      const createResponse = await fetch('/api/request', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          requestorName: requestorName.trim(),
-          itemRequested: item.trim(),
-        }),
-      });
-
-      if (!createResponse.ok) {
-        throw new Error('Failed to create request');
-      }
-
-      const newRequest = await createResponse.json();
-
-      // Immediately approve it
-      const approveResponse = await fetch('/api/request', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id: newRequest._id,
-          status: 'approved',
-        }),
-      });
-
-      if (!approveResponse.ok) {
-        throw new Error('Failed to approve request');
-      }
-
-      // Clear form and refresh list
-      setItem("");
-      setRequestorName("");
-      await fetchApprovedItems();
+      const url = `/api/request?page=${page}${status && status !== "all" ? `&status=${status}` : ""}`;
+      const response = await fetch(url);
       
+      if (!response.ok) throw new Error('Failed to fetch requests');
+      
+      const data: PaginatedItemRequests = await response.json();
+      setRequests(data.data || []);
+      setTotalPages(data.totalPages || 0);
+      setTotalRecords(data.totalRecords || 0);
+      setCurrentPage(data.currentPage || 1);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : 'Failed to load requests');
+      setRequests([]);
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="max-w-md mx-auto mt-8 flex flex-col items-center gap-6">
-      <h2 className="font-bold">Approve Items</h2>
+  const handleStatusChange = async (id: string, status: RequestStatus) => {
+    setUpdating(id);
+    
+    try {
+      const response = await fetch('/api/request', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status }),
+      });
 
-      {error && (
-        <div className="w-full p-3 bg-danger-fill text-danger-text rounded-md text-sm">
-          {error}
-        </div>
-      )}
-
-      <div className="flex flex-col w-full gap-4">
-        <Input
-          type="text"
-          placeholder="Enter your name"
-          value={requestorName}
-          onChange={(e) => setRequestorName(e.target.value)}
-          label="Requestor Name"
-        />
-        <Input
-          type="text"
-          placeholder="Type an item"
-          value={item}
-          onChange={(e) => setItem(e.target.value)}
-          label="Item"
-        />
-        <Button 
-          onClick={handleAddItem}
-          disabled={loading}
-        >
-          {loading ? "Adding..." : "Approve"}
-        </Button>
-      </div>
+      if (!response.ok) throw new Error('Failed to update status');
       
-      <div className="flex flex-col gap-3">
-        <h3 className="underline">Currently approved items:</h3>
-        {approvedItems.length > 0 ? (
-          <ul className="list-disc pl-5 space-y-1">
-            {approvedItems.map((request) => (
-              <li key={request._id}>
-                <strong>{request.itemRequested}</strong> 
-                <span className="text-gray-text-dark text-sm">
-                  {" "}(requested by {request.requestorName})
-                </span>
-              </li>
+      await fetchRequests(currentPage, activeTab === "all" ? undefined : activeTab);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update status');
+    } finally {
+      setUpdating("");
+    }
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    fetchRequests(page, activeTab === "all" ? undefined : activeTab);
+  };
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    setCurrentPage(1);
+    fetchRequests(1, tab === "all" ? undefined : tab);
+  };
+
+  useEffect(() => {
+    fetchRequests(1);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const tabs = [
+    { id: "all", label: "All Requests" },
+    { id: "pending", label: "Pending" },
+    { id: "approved", label: "Approved" },
+    { id: "completed", label: "Completed" },
+    { id: "rejected", label: "Rejected" },
+  ];
+
+  return (
+    <div className="min-h-screen bg-gray-fill-light">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            Item Requests Management
+          </h1>
+          <p className="text-gray-text">
+            Manage and track item requests from disaster-affected areas
+          </p>
+        </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-danger-fill text-danger-text rounded-md border border-danger-indicator">
+            {error}
+          </div>
+        )}
+
+        {/* Status Tabs */}
+        <div className="mb-6">
+          <div className="flex space-x-1 bg-gray-fill p-1 rounded-lg">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className={`
+                  px-4 py-2 rounded-md text-sm font-medium transition-all duration-200
+                  ${activeTab === tab.id
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-text hover:text-gray-text-dark hover:bg-white/50"
+                  }
+                `}
+              >
+                {tab.label}
+                {tab.id === "all" && totalRecords > 0 && (
+                  <span className="ml-2 py-0.5 px-2 rounded-full bg-gray-200 text-gray-600 text-xs">
+                    {totalRecords}
+                  </span>
+                )}
+              </button>
             ))}
-          </ul>
-        ) : (
-          "None :("
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="bg-white border border-gray-stroke overflow-visible">
+          <ItemRequestsTable
+            requests={requests}
+            onStatusChange={handleStatusChange}
+            loading={loading}
+          />
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="px-6 py-4 border-t border-gray-stroke">
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-gray-text">
+                  Showing {requests.length} of {totalRecords} requests
+                </div>
+                <Pagination
+                  pageNumber={currentPage}
+                  pageSize={6}
+                  totalRecords={totalRecords}
+                  onPageChange={handlePageChange}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Loading overlay */}
+        {updating && (
+          <div className="fixed inset-0 bg-black bg-opacity-25 flex items-center justify-center z-50">
+            <div className="bg-white p-4 rounded-lg shadow-lg">
+              <div className="animate-pulse text-gray-900">Updating status...</div>
+            </div>
+          </div>
         )}
       </div>
     </div>
